@@ -13,28 +13,16 @@ import kotlinx.coroutines.experimental.run
 /**
  * Class representing a holder of the app state.
  */
-abstract class Store<S : State> : ViewModel() {
-
-    /**
-     * The current state held in this [Store].
-     */
-    val state: S
-        get() = mutableState.value ?: throw IllegalStateException()
-
-    /**
-     * The current state held in this [Store], which can be observed.
-     */
-    val observableState: LiveData<S>
-        get() = mutableState
+abstract class Store : ViewModel() {
 
     /**
      * Called when the state is changed by [Action].
      */
-    var onStateChanged: ((old: S, action: Action, new: S) -> Unit)? = null
+    var onStateChanged: ((old: State, action: Action, new: State) -> Unit)? = null
 
-    private val mutableState = MutableLiveData<S>()
+    private val states = mutableMapOf<Class<out State>, MutableLiveData<out State>>()
 
-    private val reducers = mutableListOf<ReducerWrapper<S, *>>()
+    private val reducers = mutableListOf<ReducerWrapper<*, *>>()
 
     private val dispatchActor = actor<Action>(CommonPool, capacity = Channel.UNLIMITED) {
         for (action in channel) {
@@ -43,21 +31,47 @@ abstract class Store<S : State> : ViewModel() {
     }
 
     /**
+     * The current state held in this [Store].
+     */
+    inline fun <reified S : State> getState(): S =
+            getLiveState<S>(S::class.java).value ?: throw IllegalStateException()
+
+    /**
+     * The current state held in this [Store], which can be observed.
+     */
+    inline fun <reified S : State> getLiveState(): LiveData<S> =
+            getLiveState(S::class.java)
+
+    @Suppress("UNCHECKED_CAST")
+    fun <S : State> getLiveState(stateClass: Class<out State>): LiveData<S> =
+            states[stateClass] as? LiveData<S> ?: throw IllegalArgumentException()
+
+    /**
      * Registers a reducer to calculate a next state.
      *
      * @param reducer a reducer to be registered
      */
     @UiThread
-    protected inline fun <reified A : Action> register(reducer: Reducer<S, A>) {
-        register(reducer, A::class.java)
+    protected inline fun <reified S : State, reified A : Action> register(
+            reducer: Reducer<S, A>,
+            noinline stateCreator: () -> MutableLiveData<S> = ::MutableLiveData
+    ) {
+        register(reducer, stateCreator, S::class.java, { it as? S }, { it as? A })
     }
 
     @UiThread
-    protected fun <A : Action> register(reducer: Reducer<S, A>, actionClass: Class<out Action>) {
-        if (mutableState.value == null) {
-            mutableState.value = reducer.initialState()
+    protected fun <S : State, A : Action> register(
+            reducer: Reducer<S, A>,
+            stateCreator: () -> MutableLiveData<S>,
+            stateClass: Class<out State>,
+            stateCast: (State) -> S?,
+            actionCast: (Action) -> A?
+    ) {
+        val state = states[stateClass] ?: stateCreator().also { states[stateClass] = it }
+        if (state.value == null) {
+            state.value = reducer.initialState()
         }
-        ReducerWrapper(reducer, actionClass).let(reducers::add)
+        ReducerWrapper(reducer, stateCast, actionCast).let(reducers::add)
     }
 
     /**
@@ -70,29 +84,30 @@ abstract class Store<S : State> : ViewModel() {
     }
 
     private suspend fun onActionDispatch(action: Action) {
-        val currentState = mutableState.value ?: throw IllegalStateException()
-        val nextState = reducers.fold(currentState) { state, reducer ->
-            reducer.reduce(state, action)
-        }
-        if (currentState !== nextState) {
-            onStateChanged?.invoke(currentState, action, nextState)
-            run(UI) {
-                mutableState.value = nextState
+        for (liveState in states.values) {
+            val currentState = liveState.value ?: throw IllegalStateException()
+            val nextState = reducers.fold(currentState) { state, reducer ->
+                reducer.reduce(state, action)
+            }
+            if (currentState !== nextState) {
+                onStateChanged?.invoke(currentState, action, nextState)
+                run(UI) {
+                    liveState.value = nextState
+                }
             }
         }
     }
 
     private class ReducerWrapper<S : State, A : Action>(
             private val reducer: Reducer<S, A>,
-            private val actionClass: Class<out Action>
+            private val stateCast: (State) -> S?,
+            private val actionCast: (Action) -> A?
     ) {
 
-        @Suppress("UNCHECKED_CAST")
-        fun reduce(currentState: S, action: Action): S =
-                if (actionClass.isAssignableFrom(action.javaClass)) {
-                    reducer.reduce(currentState, action as A)
-                } else {
-                    currentState
-                }
+        fun reduce(currentState: State, action: Action): State {
+            val concreteState = stateCast(currentState) ?: return currentState
+            val concreteAction = actionCast(action) ?: return currentState
+            return reducer.reduce(concreteState, concreteAction)
+        }
     }
 }
