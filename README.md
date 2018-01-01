@@ -66,7 +66,7 @@ Finally, create `Store` class and connect it to `Activity`.
 You can easily instantiate `Store` class by `ViewModelProviders` since `Store` is also `ViewModel` of Android Architecture Components.
 
 ```kotlin
-class TodoListStore : Store<TodoListState>() {
+class TodoListStore : Store() {
     init {
         register(TodoListReducer)
     }
@@ -78,7 +78,7 @@ class TodoListActivity : AppCompatActivity() {
         
         val binding = DataBindingUtil.setContentView(this, R.layout.activity_todo_list)
         val store = ViewModelProviders.of(this).get(TodoListStore::class.java)
-        store.observableState.observe(this, Observer { binding.state = it })
+        store.getLiveState<TodoListState>().observe(this, Observer { binding.state = it })
         
         binding.addButton.setOnClickListener { onAddButtonClick(binding.inputEditText.text.toString()) }
         ...
