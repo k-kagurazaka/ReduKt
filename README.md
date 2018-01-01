@@ -20,7 +20,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.k-kagurazaka:redukt:0.0.2'
+    implementation 'com.github.k-kagurazaka:redukt:0.0.3'
 }
 ```
 
