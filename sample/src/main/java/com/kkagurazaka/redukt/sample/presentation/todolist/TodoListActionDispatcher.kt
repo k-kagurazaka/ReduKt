@@ -1,6 +1,5 @@
 package com.kkagurazaka.redukt.sample.presentation.todolist
 
-import com.kkagurazaka.redukt.Store
 import com.kkagurazaka.redukt.sample.command.TodoUseCase
 import com.kkagurazaka.redukt.sample.query.TodoQueries
 import com.kkagurazaka.redukt.sample.query.VisibilityFilter
@@ -11,7 +10,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 class TodoListActionDispatcher private constructor(
-        private val store: Store<TodoListState>,
+        private val store: TodoListStore,
         private val useCase: TodoUseCase,
         private val queries: TodoQueries
 ) {
@@ -52,7 +51,7 @@ class TodoListActionDispatcher private constructor(
             private val queries: TodoQueries
     ) {
 
-        operator fun invoke(store: Store<TodoListState>): TodoListActionDispatcher =
+        operator fun invoke(store: TodoListStore): TodoListActionDispatcher =
                 TodoListActionDispatcher(store, useCase, queries)
     }
 }
