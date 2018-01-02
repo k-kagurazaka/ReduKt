@@ -5,9 +5,11 @@ import android.arch.lifecycle.MutableLiveData
 import android.arch.lifecycle.ViewModel
 import android.support.annotation.UiThread
 import kotlinx.coroutines.experimental.CommonPool
+import kotlinx.coroutines.experimental.Job
 import kotlinx.coroutines.experimental.android.UI
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.actor
+import kotlinx.coroutines.experimental.launch
 import kotlinx.coroutines.experimental.run
 
 /**
@@ -24,9 +26,10 @@ abstract class Store : ViewModel() {
 
     private val reducers = mutableListOf<ReducerWrapper<*, *>>()
 
-    private val dispatchActor = actor<Action>(CommonPool, capacity = Channel.UNLIMITED) {
-        for (action in channel) {
+    private val dispatchActor = actor<DispatchRequest>(CommonPool, capacity = Channel.UNLIMITED) {
+        for ((action, channel) in channel) {
             onActionDispatch(action)
+            channel.send(Unit)
         }
     }
 
@@ -79,8 +82,10 @@ abstract class Store : ViewModel() {
      *
      * @param action an action to be dispatched
      */
-    fun <A : Action> dispatch(action: A) {
-        dispatchActor.offer(action)
+    fun <A : Action> dispatch(action: A): Job {
+        val channel = Channel<Unit>()
+        DispatchRequest(action, channel).let(dispatchActor::offer)
+        return launch(CommonPool) { channel.receiveOrNull() }
     }
 
     private suspend fun onActionDispatch(action: Action) {
@@ -110,4 +115,9 @@ abstract class Store : ViewModel() {
             return reducer.reduce(concreteState, concreteAction)
         }
     }
+
+    private data class DispatchRequest(
+            val action: Action,
+            val channel: Channel<Unit>
+    )
 }
