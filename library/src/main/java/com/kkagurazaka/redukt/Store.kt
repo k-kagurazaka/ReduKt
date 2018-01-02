@@ -10,7 +10,7 @@ import kotlinx.coroutines.experimental.android.UI
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.actor
 import kotlinx.coroutines.experimental.launch
-import kotlinx.coroutines.experimental.run
+import kotlinx.coroutines.experimental.withContext
 import kotlin.coroutines.experimental.CoroutineContext
 
 /**
@@ -97,7 +97,7 @@ abstract class Store(private val uiContext: CoroutineContext = UI) : ViewModel()
             }
             if (currentState !== nextState) {
                 onStateChanged?.invoke(currentState, action, nextState)
-                run(uiContext) {
+                withContext(uiContext) {
                     liveState.value = nextState
                 }
             }
